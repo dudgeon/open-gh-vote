@@ -6,20 +6,87 @@ and ideas are ranked by 👍 reactions using a time-decay scoring algorithm.
 
 ## Architecture
 
-```
-┌─────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│ GitHub Issue │────▶│ GitHub Actions   │────▶│ docs/data/       │
-│ + Reactions  │     │ (cron + events)  │     │ topics.json      │
-└─────────────┘     └──────────────────┘     └────────┬─────────┘
-                                                      │
-                                                      ▼
-                                               ┌─────────────┐
-                                               │ GitHub Pages │
-                                               │ (docs/)      │
-                                               └─────────────┘
+### System Overview
+
+```mermaid
+flowchart LR
+    A["GitHub Issues\n+ 👍 Reactions"] -->|"triggers"| B["GitHub Actions\n(cron / events)"]
+    B -->|"runs"| C["aggregate-topics.js\n(Node.js script)"]
+    C -->|"fetches issues"| D[("GitHub API\n/repos/.../issues")]
+    D -->|"JSON response"| C
+    C -->|"writes"| E["docs/data/\ntopics.json"]
+    B -->|"commits & pushes"| F[("Git Repo\nmain branch")]
+    E --> F
+    F -->|"serves /docs"| G["GitHub Pages\n(docs/index.html)"]
+    G -->|"fetches"| E
 ```
 
-**Full loop:** User creates issue → user reacts with 👍 → cron fires (or event triggers) → aggregation script fetches issues via API → computes scores → writes JSON → commits to repo → GitHub Pages serves updated leaderboard.
+### End-to-End Data Flow
+
+This sequence diagram shows the full loop from proposal to leaderboard display:
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Issues as GitHub Issues
+    participant Actions as GitHub Actions
+    participant Script as aggregate-topics.js
+    participant API as GitHub API
+    participant Repo as Git Repository
+    participant Pages as GitHub Pages
+    actor Viewer
+
+    User->>Issues: Create issue via template
+    Note over Issues: Auto-labeled "topic-proposal"
+    User->>Issues: Add 👍 reaction
+
+    alt Cron trigger (every 30 min)
+        Actions->>Actions: Schedule fires
+    else Event trigger
+        Issues-->>Actions: issue opened/edited/labeled
+    else Manual trigger
+        User->>Actions: workflow_dispatch
+    end
+
+    Actions->>Script: node scripts/aggregate-topics.js
+    Script->>API: GET /repos/{owner}/{repo}/issues?labels=topic-proposal
+    API-->>Script: Issues array with reactions
+
+    Note over Script: Filter out PRs<br/>Extract categories from labels<br/>Compute time-decay scores<br/>Sort by score descending<br/>Write JSON to docs/data/topics.json
+
+    Script-->>Actions: Exit 0 (success)
+
+    Actions->>Repo: git add docs/data/topics.json
+    Actions->>Repo: git commit -m "chore: update topic scores [skip ci]"
+    Actions->>Repo: git push
+
+    Viewer->>Pages: Visit leaderboard URL
+    Pages->>Pages: fetch("./data/topics.json")
+    Pages-->>Viewer: Rendered ranked leaderboard
+```
+
+### Aggregation Script Internals
+
+```mermaid
+flowchart TD
+    A[Start] --> B{GITHUB_TOKEN\nset?}
+    B -- No --> B1[Log error, exit 1]
+    B -- Yes --> C{GITHUB_REPOSITORY\nset?}
+    C -- No --> C1[Log error, exit 1]
+    C -- Yes --> D["GET /repos/{owner}/{repo}/issues\n?labels=topic-proposal&state=open&per_page=100"]
+    D --> E{Status 200?}
+    E -- No --> E1[Log API error, exit 1]
+    E -- Yes --> F{100 results?}
+    F -- Yes --> F1[Log pagination warning]
+    F1 --> G
+    F -- No --> G[Parse JSON response]
+    G --> H[Filter out pull requests]
+    H --> I["For each issue:\n- Extract category from labels\n- Truncate body to 200 chars\n- Compute score: (👍+1) / (hours+2)^1.2"]
+    I --> J[Sort by score descending]
+    J --> K["Write docs/data/topics.json\n(create dirs if needed)"]
+    K --> L["Log summary:\nAggregated N topics"]
+    L --> M[Exit 0]
+```
 
 ## Repository Structure
 

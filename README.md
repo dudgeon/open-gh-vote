@@ -14,20 +14,47 @@ This POC validates the end-to-end mechanism for GitHub-native content prioritiza
 
 ## Architecture
 
-```
-┌─────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│ GitHub Issue │────▶│ GitHub Actions   │────▶│ docs/data/       │
-│ + Reactions  │     │ (cron + events)  │     │ topics.json      │
-└─────────────┘     └──────────────────┘     └────────┬─────────┘
-                                                      │
-                                                      ▼
-                                               ┌─────────────┐
-                                               │ GitHub Pages │
-                                               │ (docs/)      │
-                                               └─────────────┘
+```mermaid
+flowchart LR
+    A["GitHub Issues\n+ 👍 Reactions"] -->|"triggers"| B["GitHub Actions\n(cron / events)"]
+    B -->|"runs"| C["aggregate-topics.js"]
+    C -->|"fetches via API"| A
+    C -->|"writes"| D["docs/data/topics.json"]
+    B -->|"commits"| E[("main branch")]
+    D --> E
+    E -->|"serves /docs"| F["GitHub Pages\n(index.html)"]
+    F -->|"reads"| D
 ```
 
 ## How It Works
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Issues as GitHub Issues
+    participant Actions as GitHub Actions
+    participant Script as aggregate-topics.js
+    participant API as GitHub API
+    participant Repo as Git Repository
+    participant Pages as GitHub Pages
+
+    User->>Issues: 1. Create issue via template
+    Note over Issues: Auto-labeled "topic-proposal"
+    User->>Issues: 2. Add 👍 reaction
+
+    Note over Actions: 3. Trigger fires (cron / issue event / manual)
+    Actions->>Script: Run aggregation
+    Script->>API: GET issues?labels=topic-proposal
+    API-->>Script: Issues + reaction counts
+
+    Note over Script: Compute scores, sort, write JSON
+
+    Actions->>Repo: Commit docs/data/topics.json
+
+    User->>Pages: 4. Visit leaderboard
+    Pages->>Pages: Fetch topics.json
+    Pages-->>User: Ranked topic list
+```
 
 1. A user creates an issue using the **Propose a Topic** template (auto-labeled `topic-proposal`)
 2. Community members add 👍 reactions to issues they support
