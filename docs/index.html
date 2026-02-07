@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Topic Leaderboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; color: #24292f; background: #f6f8fa; line-height: 1.5; }
+    .container { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
+    header { margin-bottom: 24px; }
+    header h1 { font-size: 24px; margin-bottom: 8px; }
+    header p { color: #57606a; font-size: 14px; }
+    .actions { display: flex; gap: 12px; align-items: center; margin: 16px 0; flex-wrap: wrap; }
+    .btn-propose { display: inline-block; padding: 8px 16px; background: #2da44e; color: #fff; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500; }
+    .btn-propose:hover { background: #218838; }
+    .vote-hint { font-size: 13px; color: #57606a; }
+    .topic-list { list-style: none; }
+    .topic-item { background: #fff; border: 1px solid #d0d7de; border-radius: 6px; padding: 16px; margin-bottom: 12px; display: flex; gap: 16px; align-items: flex-start; }
+    .rank { font-size: 20px; font-weight: 600; color: #57606a; min-width: 32px; text-align: center; padding-top: 2px; }
+    .topic-content { flex: 1; min-width: 0; }
+    .topic-title { font-size: 16px; font-weight: 600; }
+    .topic-title a { color: #0969da; text-decoration: none; }
+    .topic-title a:hover { text-decoration: underline; }
+    .topic-desc { font-size: 13px; color: #57606a; margin-top: 4px; word-break: break-word; }
+    .topic-meta { display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: #57606a; flex-wrap: wrap; }
+    .topic-meta span { white-space: nowrap; }
+    .category-badge { background: #ddf4ff; color: #0969da; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+    .score { color: #8b949e; font-size: 11px; }
+    .empty-state { text-align: center; padding: 48px 16px; color: #57606a; }
+    .empty-state p { font-size: 16px; margin-bottom: 16px; }
+    .loading { text-align: center; padding: 48px 16px; color: #57606a; }
+    .error { text-align: center; padding: 48px 16px; color: #cf222e; }
+    footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #d0d7de; font-size: 12px; color: #8b949e; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Topic Leaderboard</h1>
+      <p>Community-driven topic proposals, ranked by votes.</p>
+    </header>
+
+    <div class="actions">
+      <a class="btn-propose" id="propose-link" href="#">Propose a Topic</a>
+      <span class="vote-hint">Vote by adding a 👍 reaction to any issue</span>
+    </div>
+
+    <div id="content">
+      <div class="loading">Loading topics...</div>
+    </div>
+
+    <footer>
+      <span id="generated-at"></span>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      // Detect repo from the GitHub Pages URL (username.github.io/repo-name)
+      // or fall back to a manual config
+      function getRepoInfo() {
+        var host = window.location.hostname;
+        var pathParts = window.location.pathname.split('/').filter(Boolean);
+        if (host.endsWith('.github.io') && pathParts.length > 0) {
+          var owner = host.replace('.github.io', '');
+          var repo = pathParts[0];
+          return owner + '/' + repo;
+        }
+        return null;
+      }
+
+      var repoInfo = getRepoInfo();
+      var proposeLink = document.getElementById('propose-link');
+      if (repoInfo) {
+        proposeLink.href = 'https://github.com/' + repoInfo + '/issues/new?template=topic-proposal.yml';
+      } else {
+        proposeLink.href = '#';
+        proposeLink.title = 'Could not detect repository. Open the Issues tab manually.';
+      }
+
+      function timeAgo(dateString) {
+        var seconds = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
+        var intervals = [
+          { label: 'year', seconds: 31536000 },
+          { label: 'month', seconds: 2592000 },
+          { label: 'week', seconds: 604800 },
+          { label: 'day', seconds: 86400 },
+          { label: 'hour', seconds: 3600 },
+          { label: 'minute', seconds: 60 }
+        ];
+        for (var i = 0; i < intervals.length; i++) {
+          var count = Math.floor(seconds / intervals[i].seconds);
+          if (count >= 1) {
+            return count + ' ' + intervals[i].label + (count > 1 ? 's' : '') + ' ago';
+          }
+        }
+        return 'just now';
+      }
+
+      function render(data) {
+        var content = document.getElementById('content');
+        var footer = document.getElementById('generated-at');
+
+        if (!data.topics || data.topics.length === 0) {
+          content.innerHTML = '<div class="empty-state"><p>No topics proposed yet. Be the first!</p>' +
+            (repoInfo ? '<a class="btn-propose" href="https://github.com/' + repoInfo + '/issues/new?template=topic-proposal.yml">Propose a Topic</a>' : '') +
+            '</div>';
+          return;
+        }
+
+        var html = '<ul class="topic-list">';
+        for (var i = 0; i < data.topics.length; i++) {
+          var t = data.topics[i];
+          html += '<li class="topic-item">' +
+            '<div class="rank">' + (i + 1) + '</div>' +
+            '<div class="topic-content">' +
+            '<div class="topic-title"><a href="' + escapeHtml(t.url) + '">' + escapeHtml(t.title) + '</a></div>' +
+            '<div class="topic-desc">' + escapeHtml(t.description) + '</div>' +
+            '<div class="topic-meta">' +
+            '<span>👍 ' + t.votes + '</span>' +
+            '<span>💬 ' + t.comment_count + '</span>' +
+            '<span class="category-badge">' + escapeHtml(t.category) + '</span>' +
+            '<span>' + timeAgo(t.created_at) + '</span>' +
+            '<span class="score">score: ' + t.score + '</span>' +
+            '</div>' +
+            '</div>' +
+            '</li>';
+        }
+        html += '</ul>';
+        content.innerHTML = html;
+
+        if (data.generated_at) {
+          footer.textContent = 'Last updated: ' + new Date(data.generated_at).toLocaleString();
+        }
+      }
+
+      function escapeHtml(str) {
+        if (!str) return '';
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+      }
+
+      fetch('./data/topics.json')
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(render)
+        .catch(function (err) {
+          document.getElementById('content').innerHTML =
+            '<div class="error">Failed to load topics: ' + escapeHtml(err.message) + '</div>';
+        });
+    })();
+  </script>
+</body>
+</html>

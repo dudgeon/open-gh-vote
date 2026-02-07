@@ -1,0 +1,36 @@
+name: Propose a Topic
+description: Submit a topic idea for the community to vote on
+title: "[Topic] "
+labels: ["topic-proposal"]
+body:
+  - type: input
+    id: topic-title
+    attributes:
+      label: Topic Title
+      description: A short name for your proposed topic
+      placeholder: e.g., Building evaluation frameworks for LLM features
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What is this topic about and why does it matter?
+      placeholder: Describe the topic and its relevance...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      description: Select the category that best fits your topic
+      options:
+        - Methodology
+        - Tooling
+        - Case Study
+        - Framework
+        - Other
+    validations:
+      required: true

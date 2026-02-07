@@ -1,0 +1,43 @@
+name: Aggregate Topic Votes
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+
+  issues:
+    types: [opened, edited, deleted, labeled, unlabeled]
+
+  issue_comment:
+    types: [created]
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: read
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run aggregation script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/aggregate-topics.js
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data/topics.json
+          git diff --cached --quiet || git commit -m "chore: update topic scores [skip ci]"
+          git push
